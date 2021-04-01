@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import sys
-import os
 from zabdasaGgraha import *
 
 # ---------------- #
@@ -19,4 +18,3 @@ if len(sys.argv)==2:
   e.mkbuf(currfn)
 
 e.cmdsh()
-
