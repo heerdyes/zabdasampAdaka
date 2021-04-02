@@ -1,4 +1,5 @@
 import os
+from vinyAsa import *
 
 # abstract repr of a text buffer
 class Buf:
@@ -11,46 +12,54 @@ class Buf:
     return wrappr
   
   # usual instance capability routines
-  def __init__(self,bufid,fn):
+  def __init__(self,bufid,fn,vlnd):
     self.txtdata=[]
     self.id=bufid
     self.bindfile(fn)
     self.cursor=[0,0]
+    self.vlndist=vlnd
     
-  def gotonxtln(self):
+  def moverows(self,dln):
     r=self.cursor[0]
-    if r+1==len(self.txtdata):
-      print('already on last line')
-      return
-    self.cursor[0]=r+1
+    if r+dln>=len(self.txtdata) or r+dln<0:
+      print('cannot leap beyond file ending!')
+      return -1
+    if r+dln<0:
+      print('cannot crawl before file beginning!')
+      return -1
+    self.cursor[0]=r+dln
     c=self.cursor[1]
     if c+1>=len(self.txtdata[self.cursor[0]]):
       self.cursor[1]=len(self.txtdata[self.cursor[0]])-1
+    return 0
     
-  def gotoprvln(self):
-    r=self.cursor[0]
-    if r==0:
-      print('already on first line')
-      return
-    self.cursor[0]=r-1
-    c=self.cursor[1]
-    if c+1>=len(self.txtdata[self.cursor[0]]):
-      self.cursor[1]=len(self.txtdata[self.cursor[0]])-1
+  def movecols(self,dc):
+    r,c=self.cursor[0],self.cursor[1]
+    if c+dc>=len(self.txtdata[r]):
+      print('cannot exceed the number of columns in row %d!'%r)
+      return -1
+    if c+dc<0:
+      print('cannot access columns in the negative realm!')
+      return -1
+    self.cursor[1]=c+dc
+    return 0
     
   def gotolinum(self,linum):
     if linum<0 or linum>=len(self.txtdata):
       print('linum %d beyond limits!'%linum)
-      return
+      return -1
     self.cursor[0]=linum
+    return 0
     
   def gotorc(self,linum,colnum):
     if linum<0 or linum>=len(self.txtdata):
       print('linum %d beyond limits!'%linum)
-      return
+      return -1
     if colnum<0 or colnum>=len(self.txtdata[linum]):
       print('colnum %d beyond limits!'%colnum)
-      return
+      return -1
     self.cursor=[linum,colnum]
+    return 0
     
   # bind file data into buffer
   def bindfile(self,fnm):
@@ -74,15 +83,16 @@ class Buf:
   # display buffer
   @chkbuf
   def printbuffer(self):
-    print('     0         10        20        30        40        50        60        70        80')
-    print('     |         |         |         |         |         |         |         |         | ')
+    print('     0    .    10   .    20   .    30   .    40   .    50   .    60   .    70   .    80')
+    print('     |    .    |    .    |    .    |    .    |    .    |    .    |    .    |    .    | ')
     print('     ',end='')
     for ic in range(self.cursor[1]):
       print(' ',end='')
     print('v')
     i=0
     for line in self.txtdata:
-      print('%03d%s %s'%(i,'>' if i==self.cursor[0] else ' ',line),end='')
+      if abs(i-self.cursor[0])<=self.vlndist:
+        print('%03d%s %s'%(i,'>' if i==self.cursor[0] else ' ',line),end='')
       i+=1
     print()
   
@@ -90,23 +100,27 @@ class Buf:
   def addline(self,s,end='\n'):
     print('[info] appending line to buffer...')
     self.txtdata.append(s+end)
+    return 0
   
   # remove line number (indexed array style)
   def deleteline(self,lnum):
     print('[info] deleting line number: '+str(lnum))
     print('[info] line contents: '+self.txtdata[lnum])
     del self.txtdata[lnum]
+    return 0
   
   # insert line at line number (indexed array style)
   def insertline(self,lnum,s,end='\n'):
     print('[info] inserting line at: '+str(lnum))
     self.txtdata.insert(lnum,s+end)
+    return 0
   
   # duplicate line n times
   def duplicateline(self,lnum,ntimes):
     print('[info] duplicating line number %d, %d times'%(lnum,ntimes))
     for x in range(ntimes):
       insertline(lnum,self.txtdata[lnum],end='')
+    return 0
 
 
 # abstract repr of the editor
@@ -120,9 +134,11 @@ class Ed:
       'i':self.handle_insline,
       'd':self.handle_delline,
       'r':self.handle_replines,
-      'cn':self.handle_gotonxtln,
-      'cp':self.handle_gotoprvln,
-      'rc':self.handle_gotorc,
+      'v':self.handle_gotonxtln,
+      '^':self.handle_gotoprvln,
+      '>':self.handle_gotonxtch,
+      '<':self.handle_gotoprvch,
+      ':':self.handle_gotorc,
       'w':self.handle_save,
       'W':self.handle_saveas,
       's':self.handle_selbuf,
@@ -137,18 +153,20 @@ class Ed:
     print('--- buffer commands ---')
     print('  b -> display buffer')
     print('  B -> list buffers')
-    print('  s -> select buffer <bufid>')
+    print('  s <bid> -> select buffer <bufid>')
     print('  w -> save buffer to current file')
-    print('  W -> save buffer as <filename>')
-    print('  o -> open file <filename>')
+    print('  W <fn> -> save buffer as <filename>')
+    print('  o <fn> -> open file <filename>')
     print()
     print('--- editing commands ---')
-    print('  i -> insert line at <linum>')
-    print('  d -> delete line at <linum>')
-    print('  r -> repeat line at <linum> <n> times')
-    print('  cn -> move cursor to next line')
-    print('  cp -> move cursor to prev line')
-    print('  rc -> move cursor to <rownum> <colnum>')
+    print('  i <ln> -> insert line at <linum>')
+    print('  d <ln> -> delete line at <linum>')
+    print('  r <ln> <n> -> repeat line at <linum> <n> times')
+    print('  v -> move cursor to next line')
+    print('  ^ -> move cursor to prev line')
+    print('  < -> move cursor to prev char')
+    print('  > -> move cursor to next char')
+    print('  : -> move cursor to <rownum> <colnum>')
     print()
     print('--- system commands ---')
     print('  h -> show this help menu')
@@ -174,7 +192,7 @@ class Ed:
     return len(self.bufs)>0
   
   def mkbuf(self,fn):
-    b=Buf(len(self.bufs),fn)
+    b=Buf(len(self.bufs),fn,VIEW_LINE_DIST)
     self.bufs.append(b)
     if self.bufidx==-1:
       self.bufidx=0
@@ -203,31 +221,78 @@ class Ed:
     print()
     
   def handle_insline(self,args):
-    linum=int(input('line number: '))
+    if len(args)!=1:
+      print('i requires <linum> as arg!')
+      return
+    linum=int(args[0])
     insline=input('line: ')
-    self.curbuf().insertline(linum,insline)
+    err=self.curbuf().insertline(linum,insline)
+    if err==0 and IMMEDIATE_VIEW:
+      self.curbuf().printbuffer()
   
   def handle_delline(self,args):
-    linum=int(input('line number: '))
-    self.curbuf().deleteline(linum)
+    if len(args)!=1:
+      print('d requires <linum> as arg!')
+      return
+    linum=int(args[0])
+    err=self.curbuf().deleteline(linum)
+    if err==0 and IMMEDIATE_VIEW:
+      self.curbuf().printbuffer()
     
   def handle_replines(self,args):
-    linum=int(input('line number: '))
-    duptimes=int(input('duplicates: '))
-    self.curbuf().duplicateline(linum,duptimes)
+    if len(args)!=2:
+      print('r requires <ln> and <n> as args!')
+      return
+    linum=int(args[0])
+    duptimes=int(args[1])
+    err=self.curbuf().duplicateline(linum,duptimes)
+    if err==0 and IMMEDIATE_VIEW:
+      self.curbuf().printbuffer()
     
   def handle_gotonxtln(self,args):
-    self.curbuf().gotonxtln()
+    cb=self.curbuf()
+    nln=1
+    if len(args)>=1:
+      nln=int(args[0])
+    err=cb.moverows(nln)
+    if IMMEDIATE_VIEW and err==0:
+      cb.printbuffer()
     
   def handle_gotoprvln(self,args):
-    self.curbuf().gotoprvln()
-    
+    cb=self.curbuf()
+    nln=1
+    if len(args)>=1:
+      nln=int(args[0])
+    err=cb.moverows(-nln)
+    if IMMEDIATE_VIEW and err==0:
+      cb.printbuffer()
+  
+  def handle_gotonxtch(self,args):
+    cb=self.curbuf()
+    nch=1
+    if len(args)>=1:
+      nch=int(args[0])
+    err=cb.movecols(nch)
+    if IMMEDIATE_VIEW and err==0:
+      cb.printbuffer()
+  
+  def handle_gotoprvch(self,args):
+    cb=self.curbuf()
+    nch=1
+    if len(args)>=1:
+      nch=int(args[0])
+    err=cb.movecols(-nch)
+    if IMMEDIATE_VIEW and err==0:
+      cb.printbuffer()
+  
   def handle_gotorc(self,args):
     if len(args)!=2:
       print('rc requires <rownum> <colnum> as args!')
       return
     r,c=int(args[0]),int(args[1])
-    self.curbuf().gotorc(r,c)
+    err=self.curbuf().gotorc(r,c)
+    if err==0 and IMMEDIATE_VIEW:
+      self.curbuf().printbuffer()
     
   def handle_save(self,args):
     self.curbuf().savefile()
